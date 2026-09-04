@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCU Memory Map Visualizer</title>
+    <style>
+        :root {
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-main: #0f172a;
+            --text-muted: #475569;
+            --border-color: #cbd5e1;
+            
+            --flash-color: #0284c7;
+            --flash-bg: #f0f9ff;
+            --ram-color: #059669;
+            --ram-bg: #ecfdf5;
+            
+            --sec-text: #0284c7;
+            --sec-rodata: #4f46e5;
+            --sec-data: #d97706;
+            --sec-bss: #db2777;
+            --sec-heap: #059669;
+            --sec-stack: #9333ea;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        h1 {
+            margin-bottom: 8px;
+            font-size: 1.5rem;
+            color: #0f172a;
+            text-align: center;
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+
+        .memory-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            width: 100%;
+            max-width: 1000px;
+        }
+
+        @media (max-width: 768px) {
+            .memory-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .memory-bank {
+            background: var(--card-bg);
+            border-radius: 2px;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .bank-header {
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 12px;
+            margin-bottom: 16px;
+        }
+
+        .bank-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .flash-title { color: var(--flash-color); }
+        .ram-title { color: var(--ram-color); }
+
+        .bank-subtitle {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-family: monospace;
+            margin-top: 4px;
+        }
+
+        .section-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            flex-grow: 1;
+        }
+
+        .section-box {
+            border-radius: 2px;
+            padding: 12px;
+            border-left: 4px solid;
+            background: #f1f5f9;
+            transition: transform 0.2s, background-color 0.2s;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .section-box:hover {
+            transform: translateX(4px);
+            background: #e2e8f0;
+        }
+
+        .sec-text { border-color: var(--sec-text); }
+        .sec-rodata { border-color: var(--sec-rodata); }
+        .sec-data { border-color: var(--sec-data); }
+        .sec-bss { border-color: var(--sec-bss); }
+        .sec-heap { border-color: var(--sec-heap); }
+        .sec-stack { border-color: var(--sec-stack); }
+
+        .sec-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .sec-name {
+            font-family: monospace;
+            font-weight: 700;
+            font-size: 0.95rem;
+        }
+
+        .sec-tag {
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 2px;
+            background: #e2e8f0;
+            color: #334155;
+            font-weight: 600;
+        }
+
+        .sec-content {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+
+        .code-snippet {
+            font-family: monospace;
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            padding: 3px 6px;
+            border-radius: 2px;
+            color: #0f172a;
+            display: inline-block;
+            margin-top: 4px;
+            font-size: 0.75rem;
+        }
+
+        .growth-arrow {
+            text-align: center;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            padding: 4px 0;
+            font-weight: bold;
+        }
+
+        .free-space {
+            border: 1px dashed var(--border-color);
+            border-radius: 2px;
+            padding: 12px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            font-style: italic;
+            background: #fafafa;
+        }
+
+        /* --- STYLES CHO PHẦN THÔNG TIN TỔNG QUAN & TỐI ƯU --- */
+        .info-container {
+            width: 100%;
+            max-width: 1000px;
+            margin-top: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .info-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 2px;
+            padding: 16px 20px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        }
+
+        .info-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 12px;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 6px;
+        }
+
+        .info-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .info-list li {
+            line-height: 1.5;
+            position: relative;
+            padding-left: 16px;
+        }
+
+        .info-list li::before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: #0284c7;
+            font-weight: bold;
+        }
+
+        .info-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            margin-top: 4px;
+        }
+
+        .info-table th, .info-table td {
+            border: 1px solid var(--border-color);
+            padding: 8px 12px;
+            text-align: left;
+        }
+
+        .info-table th {
+            background-color: #f1f5f9;
+            color: #0f172a;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>BẢN ĐỒ BỘ NHỚ MCU (STM32 / ESP32)</h1>
+    <div class="subtitle">Phân bổ bộ nhớ chuẩn trong lập trình C/C++ vi điều khiển</div>
+
+    <div class="memory-container">
+        
+        <!-- FLASH MEMORY -->
+        <div class="memory-bank" style="background: var(--flash-bg);">
+            <div class="bank-header">
+                <div class="bank-title flash-title">
+                    FLASH
+                    <span style="font-size:0.75rem; font-weight:normal; color:#ffffff; background:var(--flash-color); padding:2px 8px; border-radius:2px;">Non-Volatile</span>
+                </div>
+                <div class="bank-subtitle">0x0800_0000 (STM32) | 0x4200_0000 (ESP32)</div>
+            </div>
+
+            <div class="section-list">
+                <!-- .text -->
+                <div class="section-box sec-text">
+                    <div class="sec-header">
+                        <span class="sec-name" style="color: var(--sec-text);">.isr_vector / .text</span>
+                        <span class="sec-tag">Mã máy (Executable Code)</span>
+                    </div>
+                    <div class="sec-content">
+                        Chứa Bảng vector ngắt (ISR) và toàn bộ mã lệnh của chương trình. CPU đọc và thực thi trực tiếp từ Flash hoặc nạp vào IRAM/ITCM lúc boot.
+                        <br>
+                        <div class="code-snippet">void main(void) { ... }</div>
+                        <div class="code-snippet">void USART1_IRQHandler(void)</div>
+                    </div>
+                </div>
+
+                <!-- .rodata -->
+                <div class="section-box sec-rodata">
+                    <div class="sec-header">
+                        <span class="sec-name" style="color: var(--sec-rodata);">.rodata</span>
+                        <span class="sec-tag">Hằng số (Read-Only Data)</span>
+                    </div>
+                    <div class="sec-content">
+                        Lưu hằng số chỉ đọc, chuỗi literal và các bảng tra (look-up table).
+                        <br>
+                        <div class="code-snippet">const int MAX_RETRY = 5;</div>
+                        <div class="code-snippet">"Hello World\n"</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RAM MEMORY -->
+        <div class="memory-bank" style="background: var(--ram-bg);">
+            <div class="bank-header">
+                <div class="bank-title ram-title">
+                    RAM
+                    <span style="font-size:0.75rem; font-weight:normal; color:#ffffff; background:var(--ram-color); padding:2px 8px; border-radius:2px;">Volatile</span>
+                </div>
+                <div class="bank-subtitle">0x2000_0000 (STM32) | 0x3FC8_0000 (ESP32)</div>
+            </div>
+
+            <div class="section-list">
+                <!-- .data -->
+                <div class="section-box sec-data">
+                    <div class="sec-header">
+                        <span class="sec-name" style="color: var(--sec-data);">.data</span>
+                        <span class="sec-tag">Biến toàn cục (Init ≠ 0)</span>
+                    </div>
+                    <div class="sec-content">
+                        Chứa biến global hoặc static đã khởi tạo giá trị ban đầu khác 0. Giá trị khởi tạo được lưu ở Flash và copy sang RAM lúc khởi động.
+                        <br>
+                        <div class="code-snippet">int g_system_state = 1;</div>
+                        <div class="code-snippet">static float factor = 2.5f;</div>
+                    </div>
+                </div>
+
+                <!-- .bss -->
+                <div class="section-box sec-bss">
+                    <div class="sec-header">
+                        <span class="sec-name" style="color: var(--sec-bss);">.bss</span>
+                        <span class="sec-tag">Biến toàn cục (Init = 0 / Uninit)</span>
+                    </div>
+                    <div class="sec-content">
+                        Chứa biến global hoặc static không khởi tạo hoặc gán bằng 0/NULL. Tự động xóa về 0 lúc boot (không tốn dung lượng Flash).
+                        <br>
+                        <div class="code-snippet">int g_counter;</div>
+                        <div class="code-snippet">char* p_buffer = NULL;</div>
+                    </div>
+                </div>
+
+                <!-- .heap -->
+                <div class="section-box sec-heap">
+                    <div class="sec-header">
+                        <span class="sec-name" style="color: var(--sec-heap);">.heap</span>
+                        <span class="sec-tag">Bộ nhớ động (Dynamic Memory)</span>
+                    </div>
+                    <div class="sec-content">
+                        Vùng nhớ cấp phát động trong quá trình chạy chương trình bằng các hàm chuẩn C/C++.
+                        <br>
+                        <div class="code-snippet">malloc(), calloc(), realloc(), free()</div>
+                    </div>
+                </div>
+
+                <div class="growth-arrow">▼ Heap phát triển xuống | Stack phát triển lên ▲</div>
+
+                <div class="free-space">Vùng nhớ trống (Free Memory Pool)</div>
+
+                <!-- .stack -->
+                <div class="section-box sec-stack">
+                    <div class="sec-header">
+                        <span class="sec-name" style="color: var(--sec-stack);">.stack</span>
+                        <span class="sec-tag">Bộ nhớ tạm (Local Context)</span>
+                    </div>
+                    <div class="sec-content">
+                        Lưu biến cục bộ, tham số truyền vào hàm, địa chỉ trả về (return address) và ngữ cảnh ngắt (context switch).
+                        <br>
+                        <div class="code-snippet">int temp = 0; // khai báo trong hàm</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- THÔNG TIN BỔ SUNG & TIPS TỐI ƯU -->
+    <div class="info-container">
+
+        <!-- Kích thước các vùng -->
+        <div class="info-card">
+            <div class="info-title">1. Kích thước các vùng bộ nhớ được xác định thế nào?</div>
+            <table class="info-table">
+                <thead>
+                    <tr>
+                        <th>Phân vùng</th>
+                        <th>Thời điểm xác định kích thước</th>
+                        <th>Yếu tố quyết định</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><b>.text & .rodata</b></td>
+                        <td>Tĩnh (Lúc biên dịch)</td>
+                        <td>Số lượng câu lệnh, thư viện và hằng số/chuỗi literal.</td>
+                    </tr>
+                    <tr>
+                        <td><b>.data & .bss</b></td>
+                        <td>Tĩnh (Lúc biên dịch)</td>
+                        <td>Tổng số lượng biến global và static được khai báo.</td>
+                    </tr>
+                    <tr>
+                        <td><b>.stack</b></td>
+                        <td>Tĩnh (Cấu hình trước)</td>
+                        <td>Khai báo cố định trong file Linker Script (<code>.ld</code> hoặc <code>.s</code>).</td>
+                    </tr>
+                    <tr>
+                        <td><b>.heap</b></td>
+                        <td>Động (Lúc chạy - Runtime)</td>
+                        <td>Lượng bộ nhớ yêu cầu qua các hàm <code>malloc()</code>/<code>new</code> tại từng thời điểm.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Các vùng cần quan tâm -->
+        <div class="info-card">
+            <div class="info-title">2. Các vùng cần đặc biệt quan tâm khi lập trình Nhúng</div>
+            <ul class="info-list">
+                <li><b>Vùng .data & .bss (RAM Tĩnh):</b> Chiếm RAM vĩnh viễn ngay từ lúc bật nguồn. Nếu quá lớn sẽ làm hẹp không gian dành cho Stack và Heap.</li>
+                <li><b>Vùng .stack (Bộ nhớ tạm):</b> Dễ gây ra lỗi <b>Stack Overflow</b> nguy hiểm. Lỗi này xảy ra khi gọi hàm lồng nhau quá sâu, truyền biến cục bộ kích thước lớn (như buffer lớn), hoặc ngắt chồng ngắt làm Stack tràn sang các vùng nhớ khác gây crash/reset MCU.</li>
+                <li><b>Vùng .heap (Cấp phát động):</b> Nguy cơ cao gặp lỗi <b>Memory Leak</b> (rò rỉ bộ nhớ) và <b>Memory Fragmentation</b> (phân mảnh bộ nhớ), khiến hệ thống hoạt động chập chờn hoặc ngưng trệ sau một thời gian vận hành dài.</li>
+            </ul>
+        </div>
+
+        <!-- Tips tối ưu -->
+        <div class="info-card">
+            <div class="info-title">3. Tips tối ưu hóa bộ nhớ (Optimization Guidelines)</div>
+            <ul class="info-list">
+                <li><b>Tối ưu RAM tĩnh (.data / .bss):</b> Đẩy các bảng tra cứu (look-up table), mảng hằng số và chuỗi sang vùng Flash (<code>.rodata</code>) bằng từ khóa <code>const</code>. Ép kiểu dữ liệu nhỏ nhất có thể (dùng <code>uint8_t</code> thay vì <code>int</code>).</li>
+                <li><b>Bảo vệ vùng .stack:</b> Không khai báo mảng buffer lớn dạng biến cục bộ bên trong hàm; hãy dùng từ khóa <code>static</code> để đẩy mảng đó sang <code>.bss</code>. Hạn chế đệ quy và tránh truyền tham số dạng cấu trúc lớn (nên dùng con trỏ <code>const T*</code>).</li>
+                <li><b>Quản lý .heap an toàn:</b> Hạn chế tối đa dùng <code>malloc()</code>/<code>free()</code> trong vi điều khiển. Nếu bắt buộc phải dùng, hãy cấp phát tĩnh toàn bộ trong bước khởi tạo hệ thống (<code>setup</code>) và không cấp phát/giải phóng liên tục trong vòng lặp chính.</li>
+                <li><b>Tối ưu dung lượng Flash (.text):</b> Bật các flag tối ưu kích thước file biên dịch trên IDE (ví dụ: <code>-Os</code> trên GCC). Hạn chế dùng các hàm tốn bộ nhớ như <code>printf()</code>, <code>sprintf()</code> nếu không thực sự cần thiết.</li>
+            </ul>
+        </div>
+
+    </div>
+
+</body>
+</html>
